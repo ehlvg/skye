@@ -58,6 +58,8 @@ A Telegram bot that uses OpenRouter to answer user questions, maintains chat con
 -   `/setprompt <your_prompt>`: Sets the system prompt for the current chat.
 -   `/resetprompt`: Resets the system prompt for the current chat.
 -   `/getprompt`: Displays the current system prompt for the current chat.
+-   `/start`: Introduces the bot and lists available commands.
+-   `/resetcontext`: Clears the chat history context for the current chat.
 
 ## Persistence
 

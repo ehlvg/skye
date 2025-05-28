@@ -58,6 +58,17 @@ bot.on('message', async (msg) => {
         return;
     }
 
+    if (text === '/start') {
+        const welcomeMessage = 'Hi! I am a Telegram bot powered by OpenRouter. I can answer your questions and process attached PDF documents and images.\n\nHere are the available commands:\n' +
+                             '/ask <your_query> - Ask me a question (you can also attach a file/image).\n' +
+                             '/setprompt <your_prompt> - Set a system prompt for this chat.\n' +
+                             '/resetprompt - Reset the system prompt for this chat.\n' +
+                             '/getprompt - Display the current system prompt for this chat.\n' +
+                             '/resetcontext - Clear the chat history context for this chat.';
+        bot.sendMessage(chatId, welcomeMessage);
+        return;
+    }
+
     if (text && text.startsWith('/setprompt ')) {
         const newPrompt = text.replace('/setprompt ', '').trim();
         database.setSystemPrompt(chatId, newPrompt);
@@ -80,6 +91,13 @@ bot.on('message', async (msg) => {
         } else {
             bot.sendMessage(chatId, 'No system prompt is currently set.');
         }
+        return;
+    }
+
+    if (text === '/resetcontext') {
+        database.resetContext(chatId);
+        database.saveDatabase();
+        bot.sendMessage(chatId, 'Chat context has been reset.');
         return;
     }
 

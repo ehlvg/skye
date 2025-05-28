@@ -16,7 +16,6 @@ async function loadDatabase() {
             db = {};
         } else {
             console.error('Error loading database:', error);
-            // Depending on how critical this is, you might want to exit or handle differently
         }
     }
 }
@@ -44,8 +43,6 @@ function getContext(chatId, contextSize) {
 function addMessageToContext(chatId, message) {
     const chatData = getChatData(chatId);
     chatData.context.push(message);
-    // Context size is handled when retrieving context, but we can also prune here if needed
-    // For now, let's prune when getting to keep the logic simpler and potentially store more history if needed later.
 }
 
 function getSystemPrompt(chatId) {
@@ -60,6 +57,10 @@ function resetSystemPrompt(chatId) {
     getChatData(chatId).systemPrompt = null;
 }
 
+function resetContext(chatId) {
+    getChatData(chatId).context = [];
+}
+
 module.exports = {
     loadDatabase,
     saveDatabase,
@@ -67,5 +68,6 @@ module.exports = {
     addMessageToContext,
     getSystemPrompt,
     setSystemPrompt,
-    resetSystemPrompt
+    resetSystemPrompt,
+    resetContext
 }; 
