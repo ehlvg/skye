@@ -1,0 +1,71 @@
+const fs = require('fs').promises;
+const path = require('path');
+
+const DB_FILE = path.join(__dirname, 'database.json');
+
+let db = {};
+
+async function loadDatabase() {
+    try {
+        const data = await fs.readFile(DB_FILE, 'utf8');
+        db = JSON.parse(data);
+        console.log('Database loaded successfully.');
+    } catch (error) {
+        if (error.code === 'ENOENT') {
+            console.log('Database file not found, starting with an empty database.');
+            db = {};
+        } else {
+            console.error('Error loading database:', error);
+            // Depending on how critical this is, you might want to exit or handle differently
+        }
+    }
+}
+
+async function saveDatabase() {
+    try {
+        await fs.writeFile(DB_FILE, JSON.stringify(db, null, 2), 'utf8');
+        console.log('Database saved successfully.');
+    } catch (error) {
+        console.error('Error saving database:', error);
+    }
+}
+
+function getChatData(chatId) {
+    if (!db[chatId]) {
+        db[chatId] = { context: [], systemPrompt: null };
+    }
+    return db[chatId];
+}
+
+function getContext(chatId, contextSize) {
+    return getChatData(chatId).context.slice(-contextSize);
+}
+
+function addMessageToContext(chatId, message) {
+    const chatData = getChatData(chatId);
+    chatData.context.push(message);
+    // Context size is handled when retrieving context, but we can also prune here if needed
+    // For now, let's prune when getting to keep the logic simpler and potentially store more history if needed later.
+}
+
+function getSystemPrompt(chatId) {
+    return getChatData(chatId).systemPrompt;
+}
+
+function setSystemPrompt(chatId, prompt) {
+    getChatData(chatId).systemPrompt = prompt;
+}
+
+function resetSystemPrompt(chatId) {
+    getChatData(chatId).systemPrompt = null;
+}
+
+module.exports = {
+    loadDatabase,
+    saveDatabase,
+    getContext,
+    addMessageToContext,
+    getSystemPrompt,
+    setSystemPrompt,
+    resetSystemPrompt
+}; 
