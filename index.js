@@ -3,12 +3,9 @@ const config = require('./config');
 const database = require('./database');
 const openrouter = require('./openrouter');
 const axios = require('axios');
-const fs = require('fs').promises;
-const path = require('path');
 
 const bot = new TelegramBot(config.telegramToken, { polling: true });
 
-// Function to download a file from Telegram
 async function downloadFile(fileId, filePath) {
     try {
         const url = await bot.getFileLink(fileId);
@@ -24,15 +21,12 @@ async function downloadFile(fileId, filePath) {
     }
 }
 
-// Load the database when the bot starts
 database.loadDatabase();
 
-// Save the database periodically (e.g., every 5 minutes)
 setInterval(() => {
     database.saveDatabase();
 }, 5 * 60 * 1000);
 
-// Save the database when the process is exiting
 process.on('SIGINT', async () => {
     console.log('Saving database before exiting...');
     await database.saveDatabase();
@@ -47,14 +41,17 @@ process.on('SIGTERM', async () => {
 
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
-    const userId = msg.from.id;
     const text = msg.text;
     const document = msg.document;
     const photo = msg.photo;
 
     if (config.allowedChats.length > 0 && !config.allowedChats.includes(chatId)) {
         console.log(`Message from unauthorized chat ID: ${chatId}`);
-        bot.sendMessage(chatId, 'This chat is not authorized to use this bot.');
+
+        if (text && text.startsWith('/ask ')) {
+             bot.sendMessage(chatId, 'This chat is not authorized to use this bot.');
+        }
+
         return;
     }
 
@@ -101,16 +98,18 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    const isAskCommand = text && text.startsWith('/ask ');
     const hasDocument = document && (document.mime_type === 'application/pdf' || document.mime_type.startsWith('image/'));
     const hasPhoto = photo && photo.length > 0;
 
-    if (!isAskCommand && !hasDocument && !hasPhoto) {
+    if (!text || (!text.startsWith('/ask ') && (hasDocument || hasPhoto))) {
+        if (hasDocument || hasPhoto) {
+             console.log(`Ignoring attachment message without /ask command from chat ID: ${chatId}`);
+        }
         return;
     }
 
     let userQuery = '';
-    if (isAskCommand) {
+    if (text && text.startsWith('/ask ')) {
         userQuery = text.replace('/ask ', '').trim();
         if (!userQuery && !hasDocument && !hasPhoto) {
              bot.sendMessage(chatId, 'Please provide a query after /ask or attach a supported file/image.');
