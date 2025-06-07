@@ -11,12 +11,8 @@ async function loadDatabase() {
         db = JSON.parse(data);
         console.log('Database loaded successfully.');
     } catch (error) {
-        if (error.code === 'ENOENT') {
             console.log('Database file not found, starting with an empty database.');
             db = {};
-        } else {
-            console.error('Error loading database:', error);
-        }
     }
 }
 
