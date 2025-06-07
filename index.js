@@ -42,6 +42,7 @@ process.on('SIGTERM', async () => {
 bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text;
+    const caption = msg.caption || '';
     const document = msg.document;
     const photo = msg.photo;
 
@@ -101,9 +102,16 @@ bot.on('message', async (msg) => {
     const hasDocument = document && (document.mime_type === 'application/pdf' || document.mime_type.startsWith('image/'));
     const hasPhoto = photo && photo.length > 0;
 
-    if (!text || (!text.startsWith('/ask ') && (hasDocument || hasPhoto))) {
-        if (hasDocument || hasPhoto) {
-             console.log(`Ignoring attachment message without /ask command from chat ID: ${chatId}`);
+    // Check if this is a message we should process
+    const hasAskCommand = (text && text.startsWith('/ask ')) || (caption && caption.startsWith('/ask '));
+    const hasAttachment = hasDocument || hasPhoto;
+
+    // Skip if:
+    // 1. No text and no caption (empty message)
+    // 2. Has attachment but no /ask command
+    if ((!text && !caption) || (hasAttachment && !hasAskCommand)) {
+        if (hasAttachment) {
+            console.log(`Ignoring attachment message without /ask command from chat ID: ${chatId}`);
         }
         return;
     }
@@ -111,10 +119,8 @@ bot.on('message', async (msg) => {
     let userQuery = '';
     if (text && text.startsWith('/ask ')) {
         userQuery = text.replace('/ask ', '').trim();
-        if (!userQuery && !hasDocument && !hasPhoto) {
-             bot.sendMessage(chatId, 'Please provide a query after /ask or attach a supported file/image.');
-             return;
-        }
+    } else if (caption && caption.startsWith('/ask ')) {
+        userQuery = caption.replace('/ask ', '').trim();
     }
 
     const messageContent = [];
@@ -180,7 +186,6 @@ bot.on('message', async (msg) => {
     }
 
     if (messageContent.length === 0) {
-        bot.sendMessage(chatId, 'Please provide a query or attach a supported file/image.');
         return;
     }
 
