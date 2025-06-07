@@ -45,6 +45,7 @@ bot.on('message', async (msg) => {
     const caption = msg.caption || '';
     const document = msg.document;
     const photo = msg.photo;
+    let webEnable = false;
 
     if (config.allowedChats.length > 0 && !config.allowedChats.includes(chatId)) {
         console.log(`Message from unauthorized chat ID: ${chatId}`);
@@ -62,7 +63,8 @@ bot.on('message', async (msg) => {
                              '/setprompt <your_prompt> - Set a system prompt for this chat.\n' +
                              '/resetprompt - Reset the system prompt for this chat.\n' +
                              '/getprompt - Display the current system prompt for this chat.\n' +
-                             '/resetcontext - Clear the chat history context for this chat.';
+                             '/resetcontext - Clear the chat history context for this chat.\n' +
+                             '/web <your_prompt> - Search the web for info and ground response.';
         bot.sendMessage(chatId, welcomeMessage);
         return;
     }
@@ -97,6 +99,10 @@ bot.on('message', async (msg) => {
         database.saveDatabase();
         bot.sendMessage(chatId, 'Chat context has been reset.');
         return;
+    }
+
+    if (text.startsWith('/web ')) {
+        webEnable = true;
     }
 
     const hasDocument = document && (document.mime_type === 'application/pdf' || document.mime_type.startsWith('image/'));
@@ -200,7 +206,7 @@ bot.on('message', async (msg) => {
     }
     messages.push(...context);
 
-    const botResponse = await openrouter.getOpenRouterResponse(messages);
+    const botResponse = await openrouter.getOpenRouterResponse(messages, webEnable);
 
     database.addMessageToContext(chatId, { role: 'assistant', content: [{ type: 'text', text: botResponse }] });
 
