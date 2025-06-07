@@ -101,7 +101,7 @@ bot.on('message', async (msg) => {
         return;
     }
 
-    if (text.startsWith('/web ')) {
+    if (text && text.startsWith('/web ')) {
         webEnable = true;
     }
 
