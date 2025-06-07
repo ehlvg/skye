@@ -109,7 +109,7 @@ bot.on('message', async (msg) => {
     const hasPhoto = photo && photo.length > 0;
 
     // Check if this is a message we should process
-    const hasAskCommand = (text && text.startsWith('/ask ')) || (caption && caption.startsWith('/ask '));
+    const hasAskCommand = (text && (text.startsWith('/ask ') || text.startsWith('/web '))) || (caption && (caption.startsWith('/ask ') || caption.startsWith('/web ')));
     const hasAttachment = hasDocument || hasPhoto;
 
     // Skip if:
@@ -127,6 +127,10 @@ bot.on('message', async (msg) => {
         userQuery = text.replace('/ask ', '').trim();
     } else if (caption && caption.startsWith('/ask ')) {
         userQuery = caption.replace('/ask ', '').trim();
+    } else if (text && text.startsWith('/web ')) {
+        userQuery = text.replace('/web ', '').trim();
+    } else if (caption && caption.startsWith('/web ')) {
+        userQuery = caption.replace('/web ', '').trim();
     }
 
     const messageContent = [];
