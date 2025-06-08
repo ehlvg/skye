@@ -1,11 +1,10 @@
 const axios = require('axios');
 const config = require('./config');
 
-async function getOpenRouterResponse(messages, enableWeb) {
-    let chosenModel = enableWeb ? "google/gemini-2.5-flash-preview-05-20:online" : "google/gemini-2.5-flash-preview-05-20";
+async function getOpenRouterResponse(messages, model) {
     try {
         const response = await axios.post('https://openrouter.ai/api/v1/chat/completions', {
-            model: chosenModel,
+            model: model,
             messages: messages
         }, {
             headers: {

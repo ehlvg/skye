@@ -45,27 +45,28 @@ bot.on('message', async (msg) => {
     const caption = msg.caption || '';
     const document = msg.document;
     const photo = msg.photo;
-    let webEnable = false;
 
     if (config.allowedChats.length > 0 && !config.allowedChats.includes(chatId)) {
         console.log(`Message from unauthorized chat ID: ${chatId}`);
 
         if (text && text.startsWith('/ask ')) {
-             bot.sendMessage(chatId, 'This chat is not authorized to use this bot.');
+             bot.sendMessage(chatId, '🚫 This chat is not authorized to use this bot.', { reply_to_message_id: msg.message_id });
         }
 
         return;
     }
 
     if (text === '/start') {
-        const welcomeMessage = 'Hi! I am a Telegram bot powered by OpenRouter. I can answer your questions and process attached PDF documents and images.\n\nHere are the available commands:\n' +
-                             '/ask <your_query> - Ask me a question (you can also attach a file/image).\n' +
-                             '/setprompt <your_prompt> - Set a system prompt for this chat.\n' +
-                             '/resetprompt - Reset the system prompt for this chat.\n' +
-                             '/getprompt - Display the current system prompt for this chat.\n' +
-                             '/resetcontext - Clear the chat history context for this chat.\n' +
-                             '/web <your_prompt> - Search the web for info and ground response.';
-        bot.sendMessage(chatId, welcomeMessage);
+        const welcomeMessage = '👋 Hi! I am a Telegram bot powered by OpenRouter. I can answer your questions and process attached PDF documents and images.\n\nHere are the available commands:\n' +
+                             '❓ /ask <your_query> - Ask me a question (you can also attach a file/image).\n' +
+                             '⚙️ /setprompt <your_prompt> - Set a system prompt for this chat.\n' +
+                             '🔄 /resetprompt - Reset the system prompt for this chat.\n' +
+                             '📝 /getprompt - Display the current system prompt for this chat.\n' +
+                             '🗑️ /resetcontext - Clear the chat history context for this chat.\n' +
+                             '🤖 /model <model_name> - Set the AI model for this chat (e.g., /model openai/gpt-4.1).\n' +
+                             'ℹ️ /getmodel - Display the current model for this chat.\n' +
+                             '🔄 /resetmodel - Reset the model to default (Gemini).';
+        bot.sendMessage(chatId, welcomeMessage, { reply_to_message_id: msg.message_id });
         return;
     }
 
@@ -73,23 +74,23 @@ bot.on('message', async (msg) => {
         const newPrompt = text.replace('/setprompt ', '').trim();
         database.setSystemPrompt(chatId, newPrompt);
         database.saveDatabase();
-        bot.sendMessage(chatId, 'System prompt updated.');
+        bot.sendMessage(chatId, '✅ System prompt updated.', { reply_to_message_id: msg.message_id });
         return;
     }
 
     if (text === '/resetprompt') {
         database.resetSystemPrompt(chatId);
         database.saveDatabase();
-        bot.sendMessage(chatId, 'System prompt reset.');
+        bot.sendMessage(chatId, '🔄 System prompt reset.', { reply_to_message_id: msg.message_id });
         return;
     }
 
     if (text === '/getprompt') {
         const currentPrompt = database.getSystemPrompt(chatId);
         if (currentPrompt) {
-            bot.sendMessage(chatId, `Current system prompt:\n${currentPrompt}`);
+            bot.sendMessage(chatId, `📝 Current system prompt:\n${currentPrompt}`, { reply_to_message_id: msg.message_id });
         } else {
-            bot.sendMessage(chatId, 'No system prompt is currently set.');
+            bot.sendMessage(chatId, 'ℹ️ No system prompt is currently set.', { reply_to_message_id: msg.message_id });
         }
         return;
     }
@@ -97,19 +98,36 @@ bot.on('message', async (msg) => {
     if (text === '/resetcontext') {
         database.resetContext(chatId);
         database.saveDatabase();
-        bot.sendMessage(chatId, 'Chat context has been reset.');
+        bot.sendMessage(chatId, '🗑️ Chat context has been reset.', { reply_to_message_id: msg.message_id });
         return;
     }
 
-    if (text && text.startsWith('/web ')) {
-        webEnable = true;
+    if (text && text.startsWith('/model ')) {
+        const newModel = text.replace('/model ', '').trim();
+        database.setModel(chatId, newModel);
+        database.saveDatabase();
+        bot.sendMessage(chatId, `🤖 Model updated to: ${newModel}`, { reply_to_message_id: msg.message_id });
+        return;
+    }
+
+    if (text === '/getmodel') {
+        const currentModel = database.getModel(chatId);
+        bot.sendMessage(chatId, `ℹ️ Current model: ${currentModel}`, { reply_to_message_id: msg.message_id });
+        return;
+    }
+
+    if (text === '/resetmodel') {
+        database.resetModel(chatId);
+        database.saveDatabase();
+        bot.sendMessage(chatId, '🔄 Model reset to default (Gemini).', { reply_to_message_id: msg.message_id });
+        return;
     }
 
     const hasDocument = document && (document.mime_type === 'application/pdf' || document.mime_type.startsWith('image/'));
     const hasPhoto = photo && photo.length > 0;
 
     // Check if this is a message we should process
-    const hasAskCommand = (text && (text.startsWith('/ask ') || text.startsWith('/web '))) || (caption && (caption.startsWith('/ask ') || caption.startsWith('/web ')));
+    const hasAskCommand = (text && text.startsWith('/ask ')) || (caption && caption.startsWith('/ask '));
     const hasAttachment = hasDocument || hasPhoto;
 
     // Skip if:
@@ -117,7 +135,7 @@ bot.on('message', async (msg) => {
     // 2. Has attachment but no /ask command
     if ((!text && !caption) || (hasAttachment && !hasAskCommand)) {
         if (hasAttachment) {
-            console.log(`Ignoring attachment message without /ask command from chat ID: ${chatId}`);
+            console.log(`📎 Ignoring attachment message without /ask command from chat ID: ${chatId}`);
         }
         return;
     }
@@ -127,10 +145,6 @@ bot.on('message', async (msg) => {
         userQuery = text.replace('/ask ', '').trim();
     } else if (caption && caption.startsWith('/ask ')) {
         userQuery = caption.replace('/ask ', '').trim();
-    } else if (text && text.startsWith('/web ')) {
-        userQuery = text.replace('/web ', '').trim();
-    } else if (caption && caption.startsWith('/web ')) {
-        userQuery = caption.replace('/web ', '').trim();
     }
 
     const messageContent = [];
@@ -165,11 +179,11 @@ bot.on('message', async (msg) => {
                     });
                 }
             } else {
-                 bot.sendMessage(chatId, 'Could not download the attached file.');
+                 bot.sendMessage(chatId, '❌ Could not download the attached file.', { reply_to_message_id: msg.message_id });
                  return;
             }
         } else {
-             bot.sendMessage(chatId, 'Unsupported file type. Only PDF and images are supported.');
+             bot.sendMessage(chatId, '❌ Unsupported file type. Only PDF and images are supported.', { reply_to_message_id: msg.message_id });
              return;
         }
     }
@@ -190,7 +204,7 @@ bot.on('message', async (msg) => {
                 }
             });
         } else {
-             bot.sendMessage(chatId, 'Could not download the attached image.');
+             bot.sendMessage(chatId, '❌ Could not download the attached image.', { reply_to_message_id: msg.message_id });
              return;
         }
     }
@@ -203,6 +217,7 @@ bot.on('message', async (msg) => {
 
     const context = database.getContext(chatId, config.contextSize);
     const systemPrompt = database.getSystemPrompt(chatId);
+    const model = database.getModel(chatId);
 
     const messages = [];
     if (systemPrompt) {
@@ -210,13 +225,13 @@ bot.on('message', async (msg) => {
     }
     messages.push(...context);
 
-    const botResponse = await openrouter.getOpenRouterResponse(messages, webEnable);
+    const botResponse = await openrouter.getOpenRouterResponse(messages, model);
 
     database.addMessageToContext(chatId, { role: 'assistant', content: [{ type: 'text', text: botResponse }] });
 
     database.saveDatabase();
 
-    bot.sendMessage(chatId, botResponse);
+    bot.sendMessage(chatId, `🤖 ${botResponse}`, { reply_to_message_id: msg.message_id });
 });
 
-console.log('Telegram bot started...'); 
+console.log('🚀 Telegram bot started...'); 

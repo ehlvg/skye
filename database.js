@@ -27,7 +27,7 @@ async function saveDatabase() {
 
 function getChatData(chatId) {
     if (!db[chatId]) {
-        db[chatId] = { context: [], systemPrompt: null };
+        db[chatId] = { context: [], systemPrompt: null, model: "google/gemini-2.5-flash-preview-05-20" };
     }
     return db[chatId];
 }
@@ -57,6 +57,19 @@ function resetContext(chatId) {
     getChatData(chatId).context = [];
 }
 
+function getModel(chatId) {
+    return getChatData(chatId).model;
+}
+
+function setModel(chatId, model) {
+    getChatData(chatId).model = model;
+    resetContext(chatId);
+}
+
+function resetModel(chatId) {
+    getChatData(chatId).model = "google/gemini-2.5-flash-preview-05-20";
+}
+
 module.exports = {
     loadDatabase,
     saveDatabase,
@@ -65,5 +78,8 @@ module.exports = {
     getSystemPrompt,
     setSystemPrompt,
     resetSystemPrompt,
-    resetContext
+    resetContext,
+    getModel,
+    setModel,
+    resetModel
 }; 
