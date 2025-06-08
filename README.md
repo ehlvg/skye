@@ -1,6 +1,6 @@
 # Telegram OpenRouter Bot
 
-A Telegram bot that uses OpenRouter to answer user questions, maintains chat context, and allows setting a system prompt per chat.
+A Telegram bot that uses OpenRouter to answer user questions, maintains chat context, and allows setting a system prompt per chat. Features a freemium model with Lite and Plus tiers.
 
 ## Features
 
@@ -8,7 +8,11 @@ A Telegram bot that uses OpenRouter to answer user questions, maintains chat con
 -   Uses OpenRouter for AI responses, including processing attached PDF documents and images.
 -   Maintains context of the last 10 messages per chat.
 -   Allows setting and resetting a system prompt for individual chats.
--   Restricts bot usage to a predefined list of allowed chat IDs.
+-   Freemium model with Lite and Plus tiers:
+    -   Lite tier: 10 messages daily, 50 messages monthly
+    -   Plus tier: 50 messages daily, 500 messages monthly
+-   Premium models available for Plus tier users
+-   Monthly subscription using Telegram Stars
 -   Persists chat context and system prompts using a simple file-based database (`database.json`).
 
 ## Prerequisites
@@ -16,7 +20,7 @@ A Telegram bot that uses OpenRouter to answer user questions, maintains chat con
 -   Node.js installed (v14 or higher recommended).
 -   A Telegram BotFather token.
 -   An OpenRouter API key.
--   The IDs of the Telegram chats/groups where the bot is allowed.
+-   A Telegram Payment Provider token for handling subscriptions.
 
 ## Setup
 
@@ -37,12 +41,12 @@ A Telegram bot that uses OpenRouter to answer user questions, maintains chat con
     ```env
     TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
     OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY
-    ALLOWED_CHATS=CHAT_ID_1,CHAT_ID_2,GROUP_ID_1
+    PAYMENT_PROVIDER_TOKEN=YOUR_PAYMENT_PROVIDER_TOKEN
     ```
 
     -   Replace `YOUR_TELEGRAM_BOT_TOKEN` with the token you got from BotFather.
     -   Replace `YOUR_OPENROUTER_API_KEY` with your OpenRouter API key.
-    -   Replace `CHAT_ID_1,CHAT_ID_2,GROUP_ID_1` with a comma-separated list of the allowed chat and group IDs. Make sure these are the numerical IDs.
+    -   Replace `YOUR_PAYMENT_PROVIDER_TOKEN` with your Telegram Payment Provider token.
 
 4.  **Running the bot:**
 
@@ -50,7 +54,7 @@ A Telegram bot that uses OpenRouter to answer user questions, maintains chat con
     npm start
     ```
 
-    The bot should now be running and listening for messages in the allowed chats.
+    The bot should now be running and ready to accept messages from any user.
 
 ## Commands
 
@@ -60,10 +64,31 @@ A Telegram bot that uses OpenRouter to answer user questions, maintains chat con
 -   `/getprompt`: Displays the current system prompt for the current chat.
 -   `/start`: Introduces the bot and lists available commands.
 -   `/resetcontext`: Clears the chat history context for the current chat.
+-   `/model`: Shows available models for your tier and allows selection.
+-   `/profile`: Shows your current tier, usage limits, and subscription status.
+-   `/upgrade`: Initiates the upgrade process to Plus tier.
+
+## Subscription Tiers
+
+### Lite Tier (Free)
+- 10 messages per day
+- 50 messages per month
+- Access to basic models:
+  - GPT-4.1
+  - Gemini 2.5 Flash
+
+### Plus Tier (300 Stars/month)
+- 50 messages per day
+- 500 messages per month
+- Access to all models:
+  - GPT-4.1
+  - Gemini 2.5 Flash
+  - Gemini 2.5 Pro
+  - GPT-4 Mini
 
 ## Persistence
 
-The bot uses a file named `database.json` in the project directory to store chat context and system prompts. This file will be automatically created and updated by the bot. Do not manually edit this file while the bot is running.
+The bot uses a file named `database.json` in the project directory to store chat context, system prompts, and user data. This file will be automatically created and updated by the bot. Do not manually edit this file while the bot is running.
 
 ## Running on a Server
 
@@ -98,7 +123,6 @@ To run this bot on a server, you'll typically follow the same setup steps (cloni
 -   Ensure your server's firewall allows outgoing connections to the Telegram and OpenRouter APIs.
 -   Keep your `.env` file secure and do not commit it to version control.
 -   Monitor the bot's logs for any errors.
-
 -   Attached PDF documents and images are sent to OpenRouter as part of the prompt (requires a multimodal model).
-
--   The IDs of the Telegram chats/groups where the bot is allowed. 
+-   Message limits reset daily at 00:00 UTC and monthly on the first day of each month.
+-   Subscriptions are valid for 30 days from the purchase date. 

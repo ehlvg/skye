@@ -5,14 +5,30 @@ const DB_FILE = path.join(__dirname, 'database.json');
 
 let db = {};
 
+const DEFAULT_LIMITS = {
+    lite: {
+        daily: 10,
+        monthly: 50
+    },
+    plus: {
+        daily: 50,
+        monthly: 500
+    }
+};
+
+const AVAILABLE_MODELS = {
+    lite: ["openai/gpt-4.1", "google/gemini-2.5-flash-preview-05-20"],
+    plus: ["openai/gpt-4.1", "google/gemini-2.5-flash-preview-05-20", "google/gemini-2.5-pro-preview-05-20", "openai/gpt-4-mini"]
+};
+
 async function loadDatabase() {
     try {
         const data = await fs.readFile(DB_FILE, 'utf8');
         db = JSON.parse(data);
         console.log('Database loaded successfully.');
     } catch (error) {
-            console.log('Database file not found, starting with an empty database.');
-            db = {};
+        console.log('Database file not found, starting with an empty database.');
+        db = {};
     }
 }
 
@@ -25,49 +41,128 @@ async function saveDatabase() {
     }
 }
 
-function getChatData(chatId) {
-    if (!db[chatId]) {
-        db[chatId] = { context: [], systemPrompt: null, model: "google/gemini-2.5-flash-preview-05-20" };
+function getUserData(userId) {
+    if (!db[userId]) {
+        db[userId] = {
+            context: [],
+            systemPrompt: null,
+            model: "openai/gpt-4.1",
+            tier: "lite",
+            subscriptionEndDate: null,
+            messageCounts: {
+                daily: 0,
+                monthly: 0,
+                lastDailyReset: new Date().toISOString(),
+                lastMonthlyReset: new Date().toISOString()
+            }
+        };
     }
-    return db[chatId];
+    return db[userId];
 }
 
-function getContext(chatId, contextSize) {
-    return getChatData(chatId).context.slice(-contextSize);
+function getContext(userId, contextSize) {
+    return getUserData(userId).context.slice(-contextSize);
 }
 
-function addMessageToContext(chatId, message) {
-    const chatData = getChatData(chatId);
-    chatData.context.push(message);
+function addMessageToContext(userId, message) {
+    const userData = getUserData(userId);
+    userData.context.push(message);
+    incrementMessageCount(userId);
 }
 
-function getSystemPrompt(chatId) {
-    return getChatData(chatId).systemPrompt;
+function getSystemPrompt(userId) {
+    return getUserData(userId).systemPrompt;
 }
 
-function setSystemPrompt(chatId, prompt) {
-    getChatData(chatId).systemPrompt = prompt;
+function setSystemPrompt(userId, prompt) {
+    getUserData(userId).systemPrompt = prompt;
 }
 
-function resetSystemPrompt(chatId) {
-    getChatData(chatId).systemPrompt = null;
+function resetSystemPrompt(userId) {
+    getUserData(userId).systemPrompt = null;
 }
 
-function resetContext(chatId) {
-    getChatData(chatId).context = [];
+function resetContext(userId) {
+    getUserData(userId).context = [];
 }
 
-function getModel(chatId) {
-    return getChatData(chatId).model;
+function getModel(userId) {
+    return getUserData(userId).model;
 }
 
-function setModel(chatId, model) {
-    getChatData(chatId).model = model;
-    resetContext(chatId);
+function setModel(userId, model) {
+    const userData = getUserData(userId);
+    const availableModels = AVAILABLE_MODELS[userData.tier];
+    if (availableModels.includes(model)) {
+        userData.model = model;
+        resetContext(userId);
+        return true;
+    }
+    return false;
 }
 
-function resetModel(chatId) {
-    getChatData(chatId).model = "google/gemini-2.5-flash-preview-05-20";
+function resetModel(userId) {
+    getUserData(userId).model = "openai/gpt-4.1";
+}
+
+function getUserProfile(userId) {
+    const userData = getUserData(userId);
+    const now = new Date();
+    const lastDailyReset = new Date(userData.messageCounts.lastDailyReset);
+    const lastMonthlyReset = new Date(userData.messageCounts.lastMonthlyReset);
+    
+    // Check if we need to reset daily count
+    if (now.getUTCDate() !== lastDailyReset.getUTCDate() || 
+        now.getUTCMonth() !== lastDailyReset.getUTCMonth() || 
+        now.getUTCFullYear() !== lastDailyReset.getUTCFullYear()) {
+        userData.messageCounts.daily = 0;
+        userData.messageCounts.lastDailyReset = now.toISOString();
+    }
+    
+    // Check if we need to reset monthly count
+    if (now.getUTCMonth() !== lastMonthlyReset.getUTCMonth() || 
+        now.getUTCFullYear() !== lastMonthlyReset.getUTCFullYear()) {
+        userData.messageCounts.monthly = 0;
+        userData.messageCounts.lastMonthlyReset = now.toISOString();
+    }
+
+    const limits = DEFAULT_LIMITS[userData.tier];
+    return {
+        userId,
+        tier: userData.tier,
+        subscriptionEndDate: userData.subscriptionEndDate,
+        dailyRemaining: limits.daily - userData.messageCounts.daily,
+        monthlyRemaining: limits.monthly - userData.messageCounts.monthly,
+        model: userData.model
+    };
+}
+
+function incrementMessageCount(userId) {
+    const userData = getUserData(userId);
+    userData.messageCounts.daily++;
+    userData.messageCounts.monthly++;
+}
+
+function canSendMessage(userId) {
+    const userData = getUserData(userId);
+    const limits = DEFAULT_LIMITS[userData.tier];
+    return userData.messageCounts.daily < limits.daily && 
+           userData.messageCounts.monthly < limits.monthly;
+}
+
+function upgradeToPlus(userId, subscriptionEndDate) {
+    const userData = getUserData(userId);
+    userData.tier = "plus";
+    userData.subscriptionEndDate = subscriptionEndDate;
+    userData.messageCounts.daily = 0;
+    userData.messageCounts.monthly = 0;
+    userData.messageCounts.lastDailyReset = new Date().toISOString();
+    userData.messageCounts.lastMonthlyReset = new Date().toISOString();
+}
+
+function getAvailableModels(userId) {
+    const userData = getUserData(userId);
+    return AVAILABLE_MODELS[userData.tier];
 }
 
 module.exports = {
@@ -81,5 +176,9 @@ module.exports = {
     resetContext,
     getModel,
     setModel,
-    resetModel
+    resetModel,
+    getUserProfile,
+    canSendMessage,
+    upgradeToPlus,
+    getAvailableModels
 }; 
