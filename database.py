@@ -72,7 +72,8 @@ class DatabaseManager:
                 updates['last_daily_reset'] = today.isoformat()
             
             # Check monthly reset
-            if user_data['last_monthly_reset'].month != today.month:
+            last_monthly_reset = datetime.fromisoformat(user_data['last_monthly_reset']).date()
+            if last_monthly_reset.month != today.month:
                 updates['monthly_count'] = 0
                 updates['last_monthly_reset'] = today.isoformat()
             
