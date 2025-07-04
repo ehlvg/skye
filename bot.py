@@ -190,6 +190,10 @@ class TelegramBot:
         # Check if message has /ask command in caption
         caption = update.message.caption or ""
         if not caption.startswith("/ask"):
+            # In group chats, ignore files without /ask command (don't respond)
+            if update.message.chat.type in ['group', 'supergroup']:
+                return
+            # In private chats, show instruction message
             await update.message.reply_text("📎 Для обработки файлов используйте команду /ask в подписи к файлу")
             return
         
