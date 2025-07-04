@@ -1,128 +1,142 @@
 # Telegram OpenRouter Bot
 
-A Telegram bot that uses OpenRouter to answer user questions, maintains chat context, and allows setting a system prompt per chat. Features a freemium model with Lite and Plus tiers.
+Telegram бот на Python с интеграцией OpenRouter API, поддержкой Telegram Stars платежей и базой данных Supabase.
 
-## Features
+## Возможности
 
--   Connects to Telegram using `node-telegram-bot-api`.
--   Uses OpenRouter for AI responses, including processing attached PDF documents and images.
--   Maintains context of the last 10 messages per chat.
--   Allows setting and resetting a system prompt for individual chats.
--   Freemium model with Lite and Plus tiers:
-    -   Lite tier: 10 messages daily, 50 messages monthly
-    -   Plus tier: 50 messages daily, 500 messages monthly
--   Premium models available for Plus tier users
--   Monthly subscription using Telegram Stars
--   Persists chat context and system prompts using a simple file-based database (`database.json`).
+- 🤖 Интеграция с OpenRouter API для доступа к различным AI моделям
+- 💬 Поддержка контекстных диалогов
+- 🎯 Кастомные системные промпты
+- 📄 Обработка PDF документов и изображений
+- 💳 Платежи через Telegram Stars
+- 📊 Система лимитов и тарифов (Lite/Plus)
+- 🗄️ Безопасная база данных Supabase
+- 🐳 Docker поддержка
+- 🔄 Автоматическое масштабирование
 
-## Prerequisites
+## Требования
 
--   Node.js installed (v14 or higher recommended).
--   A Telegram BotFather token.
--   An OpenRouter API key.
--   A Telegram Payment Provider token for handling subscriptions.
+- Python 3.11+
+- Telegram Bot Token
+- OpenRouter API ключ
+- Supabase проект и API ключи
+- Docker (опционально)
 
-## Setup
+## Установка
 
-1.  **Clone the repository:**
-    ```bash
-    git clone <repository_url>
-    cd telegram-openrouter-bot
-    ```
+### Обычная установка
 
-2.  **Install dependencies:**
-    ```bash
-    npm install
-    ```
+1. Клонируйте репозиторий:
+```bash
+git clone <repository-url>
+cd telegram-openrouter-bot
+```
 
-3.  **Create a `.env` file:**
-    Create a file named `.env` in the root directory of the project with the following content:
+2. Создайте виртуальное окружение:
+```bash
+python -m venv venv
+source venv/bin/activate  # Linux/Mac
+# или
+venv\Scripts\activate  # Windows
+```
 
-    ```env
-    TELEGRAM_TOKEN=YOUR_TELEGRAM_BOT_TOKEN
-    OPENROUTER_API_KEY=YOUR_OPENROUTER_API_KEY
-    PAYMENT_PROVIDER_TOKEN=YOUR_PAYMENT_PROVIDER_TOKEN
-    ```
+3. Установите зависимости:
+```bash
+pip install -r requirements.txt
+```
 
-    -   Replace `YOUR_TELEGRAM_BOT_TOKEN` with the token you got from BotFather.
-    -   Replace `YOUR_OPENROUTER_API_KEY` with your OpenRouter API key.
-    -   Replace `YOUR_PAYMENT_PROVIDER_TOKEN` with your Telegram Payment Provider token.
+4. Скопируйте `.env.example` в `.env` и заполните переменные:
+```bash
+cp .env.example .env
+```
 
-4.  **Running the bot:**
+5. Настройте переменные окружения в `.env`:
+```
+TELEGRAM_BOT_TOKEN=your_bot_token_here
+OPENROUTER_API_KEY=your_openrouter_api_key_here
+SUPABASE_URL=your_supabase_url_here
+SUPABASE_SERVICE_ROLE_KEY=your_supabase_service_role_key_here
+SUBSCRIPTION_PRICE_STARS=300
+CONTEXT_SIZE=10
+```
 
-    ```bash
-    npm start
-    ```
+6. Запустите бота:
+```bash
+python bot.py
+```
 
-    The bot should now be running and ready to accept messages from any user.
+### Docker установка
 
-## Commands
+1. Создайте `.env` файл как описано выше
 
--   `/ask <your_query>`: Ask the bot a question. The bot will only respond to messages starting with this command.
--   `/setprompt <your_prompt>`: Sets the system prompt for the current chat.
--   `/resetprompt`: Resets the system prompt for the current chat.
--   `/getprompt`: Displays the current system prompt for the current chat.
--   `/start`: Introduces the bot and lists available commands.
--   `/resetcontext`: Clears the chat history context for the current chat.
--   `/model`: Shows available models for your tier and allows selection.
--   `/profile`: Shows your current tier, usage limits, and subscription status.
--   `/upgrade`: Initiates the upgrade process to Plus tier.
+2. Запустите через Docker Compose:
+```bash
+docker-compose up -d
+```
 
-## Subscription Tiers
+3. Проверьте логи:
+```bash
+docker-compose logs -f telegram-bot
+```
 
-### Lite Tier (Free)
-- 10 messages per day
-- 50 messages per month
-- Access to basic models:
-  - GPT-4.1
-  - Gemini 2.5 Flash
+## Настройка Supabase
 
-### Plus Tier (300 Stars/month)
-- 50 messages per day
-- 500 messages per month
-- Access to all models:
-  - GPT-4.1
-  - Gemini 2.5 Flash
-  - Gemini 2.5 Pro
-  - GPT-4 Mini
+1. Создайте новый проект в [Supabase](https://supabase.com)
+2. Получите URL проекта и Service Role Key
+3. Таблицы создадутся автоматически при первом запуске
 
-## Persistence
+## Команды бота
 
-The bot uses a file named `database.json` in the project directory to store chat context, system prompts, and user data. This file will be automatically created and updated by the bot. Do not manually edit this file while the bot is running.
+- `/start` - Приветственное сообщение
+- `/ask <вопрос>` - Задать вопрос AI (поддерживает файлы)
+- `/profile` - Посмотреть профиль и лимиты
+- `/upgrade` - Обновиться до Plus тарифа
+- `/model` - Выбрать AI модель
+- `/setprompt <промпт>` - Установить системный промпт
+- `/getprompt` - Показать текущий промпт
+- `/resetprompt` - Сбросить промпт
+- `/resetcontext` - Очистить контекст диалога
 
-## Running on a Server
+## Тарифы
 
-To run this bot on a server, you'll typically follow the same setup steps (cloning, installing dependencies, creating `.env`). You'll need a server environment with Node.js installed. Process managers like `pm2` or `forever` are recommended to keep the bot running reliably in the background and automatically restart it if it crashes.
+### Lite (бесплатный)
+- 10 сообщений в день
+- 50 сообщений в месяц
+- Доступ к базовым моделям
 
-1.  **Install a process manager (e.g., pm2):**
-    ```bash
-    npm install -g pm2
-    ```
+### Plus (300 Telegram Stars)
+- 50 сообщений в день
+- 500 сообщений в месяц
+- Доступ к премиум моделям
+- Срок действия: 30 дней
 
-2.  **Start the bot using pm2:**
-    Navigate to your project directory on the server and run:
-    ```bash
-    pm2 start index.js --name "telegram-openrouter-bot"
-    ```
+## Поддерживаемые файлы
 
-3.  **Save the pm2 process list:**
-    To ensure the bot restarts after a server reboot:
-    ```bash
-    pm2 save
-    ```
+- PDF документы
+- Изображения (JPG, PNG, WebP)
 
-4.  **Startup script generation:**
-    Generate a startup script to configure pm2 to start on boot:
-    ```bash
-    pm2 startup
-    ```
-    Follow the instructions provided by the `pm2 startup` command.
+## Мониторинг
 
-## Notes
+Логи доступны через Docker:
+```bash
+docker-compose logs -f telegram-bot
+```
 
--   Ensure your server's firewall allows outgoing connections to the Telegram and OpenRouter APIs.
--   Keep your `.env` file secure and do not commit it to version control.
--   Monitor the bot's logs for any errors.
--   Attached PDF documents and images are sent to OpenRouter as part of the prompt (requires a multimodal model).
--   Message limits reset daily at 00:00 UTC and monthly on the first day of each month.
--   Subscriptions are valid for 30 days from the purchase date. 
+## Безопасность
+
+- Использование Service Role Key для Supabase
+- Хранение данных в зашифрованном виде
+- Лимиты на запросы
+- Валидация файлов
+
+## Обновления
+
+```bash
+git pull
+docker-compose down
+docker-compose up -d --build
+```
+
+## Поддержка
+
+Если у вас есть вопросы или проблемы, создайте issue в репозитории. 

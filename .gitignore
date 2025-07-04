@@ -1,2 +1,4 @@
-node_modules
-database.json
+.env
+venv
+logs
+__pycache__/
