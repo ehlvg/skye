@@ -13,27 +13,12 @@ services:
       - ./logs:/app/logs
     networks:
       - bot-network
-    depends_on:
-      - redis
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
 
-  redis:
-    image: redis:7-alpine
-    container_name: telegram-bot-redis
-    restart: unless-stopped
-    networks:
-      - bot-network
-    volumes:
-      - redis_data:/data
-    command: redis-server --appendonly yes
-
 networks:
   bot-network:
     driver: bridge
-
-volumes:
-  redis_data:
