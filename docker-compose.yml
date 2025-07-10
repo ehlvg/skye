@@ -9,8 +9,6 @@ services:
       - .env
     environment:
       - PYTHONUNBUFFERED=1
-    volumes:
-      - ./logs:/app/logs
     networks:
       - bot-network
     logging:
