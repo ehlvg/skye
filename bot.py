@@ -37,6 +37,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("getprompt", self.get_prompt_command))
         self.application.add_handler(CommandHandler("resetcontext", self.reset_context_command))
         self.application.add_handler(CommandHandler("ask", self.ask_command))
+        self.application.add_handler(CommandHandler("search", self.search_command))
         
         # Message handlers
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -162,6 +163,31 @@ class TelegramBot:
         query = " ".join(context.args)
         await self._process_ai_request(update, user_id, query)
     
+    async def search_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /search command - web search using Gemini online model"""
+        user_id = update.effective_user.id
+        
+        # Check if user has Plus tier
+        user_data = await db.get_user_data(user_id)
+        if not user_data or user_data['tier'] != 'plus':
+            await update.message.reply_text(
+                "🔒 Команда /search доступна только для Plus пользователей.\nИспользуйте /upgrade для обновления до Plus тарифа."
+            )
+            return
+        
+        if not await db.can_send_message(user_id):
+            await update.message.reply_text(
+                "❌ Вы достигли лимита сообщений. Дождитесь их сброса."
+            )
+            return
+        
+        if not context.args:
+            await update.message.reply_text("❌ Укажите поисковый запрос после команды /search")
+            return
+        
+        query = " ".join(context.args)
+        await self._process_search_request(update, user_id, query)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle text messages"""
         # Check if message contains model selection
@@ -184,17 +210,17 @@ class TelegramBot:
         pass
     
     async def handle_media(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle media messages with /ask command"""
+        """Handle media messages with /ask or /search command"""
         user_id = update.effective_user.id
         
-        # Check if message has /ask command in caption
+        # Check if message has /ask or /search command in caption
         caption = update.message.caption or ""
-        if not caption.startswith("/ask"):
-            # In group chats, ignore files without /ask command (don't respond)
+        if not (caption.startswith("/ask") or caption.startswith("/search")):
+            # In group chats, ignore files without command (don't respond)
             if update.message.chat.type in ['group', 'supergroup']:
                 return
             # In private chats, show instruction message
-            await update.message.reply_text("📎 Для обработки файлов используйте команду /ask в подписи к файлу")
+            await update.message.reply_text("📎 Для обработки файлов используйте команду /ask или /search в подписи к файлу")
             return
         
         if not await db.can_send_message(user_id):
@@ -203,8 +229,22 @@ class TelegramBot:
             )
             return
         
-        query = caption.replace("/ask", "").strip()
-        await self._process_media_request(update, user_id, query)
+        # Handle search command with media
+        if caption.startswith("/search"):
+            # Check if user has Plus tier for search
+            user_data = await db.get_user_data(user_id)
+            if not user_data or user_data['tier'] != 'plus':
+                await update.message.reply_text(
+                    "🔒 Команда /search доступна только для Plus пользователей.\nИспользуйте /upgrade для обновления до Plus тарифа."
+                )
+                return
+            
+            query = caption.replace("/search", "").strip()
+            await self._process_media_search_request(update, user_id, query)
+        else:
+            # Handle ask command with media
+            query = caption.replace("/ask", "").strip()
+            await self._process_media_request(update, user_id, query)
     
     async def _process_ai_request(self, update: Update, user_id: int, query: str) -> None:
         """Process AI request"""
@@ -347,6 +387,151 @@ class TelegramBot:
             logger.error(f"Error processing media request: {e}")
             await update.message.reply_text("❌ Произошла ошибка при обработке запроса")
     
+    async def _process_search_request(self, update: Update, user_id: int, query: str) -> None:
+        """Process search request using Gemini online model"""
+        try:
+            # Send typing indicator
+            await update.message.reply_chat_action("typing")
+            
+            # Prepare message content for search
+            message_content = [{"type": "text", "text": query}]
+            
+            # Get context and system prompt
+            context = await db.get_context(user_id)
+            system_prompt = await db.get_system_prompt(user_id)
+            
+            # Use the special Gemini online model for search
+            search_model = "google/gemini-2.5-flash:online"
+            
+            # Build messages for API
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            
+            messages.extend(context)
+            messages.append({"role": "user", "content": message_content})
+            
+            # Get AI response with web search
+            response = await openrouter_client.get_completion(messages, search_model)
+            
+            # Save to context
+            await db.add_message_to_context(user_id, "user", message_content)
+            await db.add_message_to_context(user_id, "assistant", [{"type": "text", "text": response}])
+            
+            # Send response with search indicator
+            await update.message.reply_text(f"🔍 Результат поиска:\n\n{response}")
+            
+        except Exception as e:
+            logger.error(f"Error processing search request: {e}")
+            await update.message.reply_text("❌ Произошла ошибка при выполнении поиска")
+    
+    async def _process_media_search_request(self, update: Update, user_id: int, query: str) -> None:
+        """Process media search request using Gemini online model"""
+        try:
+            await update.message.reply_chat_action("typing")
+            
+            message_content = []
+            if query:
+                message_content.append({"type": "text", "text": query})
+            
+            # Process document
+            if update.message.document:
+                doc = update.message.document
+                if doc.mime_type == "application/pdf":
+                    file = await doc.get_file()
+                    file_data = await self.file_processor.download_file(file.file_path)
+                    
+                    if file_data:
+                        processed_data = self.file_processor.process_pdf(file_data)
+                        if processed_data:
+                            message_content.append({
+                                "type": "file",
+                                "file": {
+                                    "filename": doc.file_name,
+                                    "file_data": processed_data
+                                }
+                            })
+                        else:
+                            await update.message.reply_text("❌ Ошибка обработки PDF файла")
+                            return
+                    else:
+                        await update.message.reply_text("❌ Ошибка скачивания файла")
+                        return
+                
+                elif doc.mime_type.startswith("image/"):
+                    file = await doc.get_file()
+                    file_data = await self.file_processor.download_file(file.file_path)
+                    
+                    if file_data:
+                        processed_data = self.file_processor.process_image(file_data, doc.mime_type)
+                        if processed_data:
+                            message_content.append({
+                                "type": "image_url",
+                                "image_url": {"url": processed_data}
+                            })
+                        else:
+                            await update.message.reply_text("❌ Ошибка обработки изображения")
+                            return
+                    else:
+                        await update.message.reply_text("❌ Ошибка скачивания файла")
+                        return
+                else:
+                    await update.message.reply_text("❌ Неподдерживаемый тип файла. Поддерживаются только PDF и изображения.")
+                    return
+            
+            # Process photo
+            if update.message.photo:
+                photo = update.message.photo[-1]  # Get highest resolution
+                file = await photo.get_file()
+                file_data = await self.file_processor.download_file(file.file_path)
+                
+                if file_data:
+                    processed_data = self.file_processor.process_image(file_data, "image/jpeg")
+                    if processed_data:
+                        message_content.append({
+                            "type": "image_url",
+                            "image_url": {"url": processed_data}
+                        })
+                    else:
+                        await update.message.reply_text("❌ Ошибка обработки изображения")
+                        return
+                else:
+                    await update.message.reply_text("❌ Ошибка скачивания изображения")
+                    return
+            
+            if not message_content:
+                await update.message.reply_text("❌ Нет содержимого для поиска")
+                return
+            
+            # Get context and system prompt
+            context = await db.get_context(user_id)
+            system_prompt = await db.get_system_prompt(user_id)
+            
+            # Use the special Gemini online model for search
+            search_model = "google/gemini-2.5-flash:online"
+            
+            # Build messages for API
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            
+            messages.extend(context)
+            messages.append({"role": "user", "content": message_content})
+            
+            # Get AI response with web search
+            response = await openrouter_client.get_completion(messages, search_model)
+            
+            # Save to context
+            await db.add_message_to_context(user_id, "user", message_content)
+            await db.add_message_to_context(user_id, "assistant", [{"type": "text", "text": response}])
+            
+            # Send response with search indicator
+            await update.message.reply_text(f"🔍 Результат поиска:\n\n{response}")
+            
+        except Exception as e:
+            logger.error(f"Error processing media search request: {e}")
+            await update.message.reply_text("❌ Произошла ошибка при выполнении поиска")
+
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle callback queries"""
         query = update.callback_query
