@@ -15,7 +15,7 @@ class OpenRouterClient:
             "Content-Type": "application/json"
         }
     
-    async def get_completion(self, messages: List[Dict[str, Any]], model: str) -> str:
+    async def get_completion(self, messages: List[Dict[str, Any]], model: str, plugins: List[Dict[str, Any]] = None) -> str:
         """Get completion from OpenRouter API"""
         try:
             async with aiohttp.ClientSession() as session:
@@ -23,6 +23,10 @@ class OpenRouterClient:
                     "model": model,
                     "messages": messages
                 }
+                
+                # Add plugins if provided (for online models)
+                if plugins:
+                    payload["plugins"] = plugins
                 
                 async with session.post(
                     f"{self.base_url}/chat/completions",

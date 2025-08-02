@@ -401,7 +401,14 @@ class TelegramBot:
             system_prompt = await db.get_system_prompt(user_id)
             
             # Use the special Gemini online model for search
-            search_model = "google/gemini-2.5-flash:online"
+            search_model = "google/gemini-2.5-flash"
+            
+            # Define search plugins with custom prompt to avoid markdown
+            search_plugins = [{
+                "id": "web",
+                "max_results": 3,
+                "search_prompt": "Here are relevant web search results (provide information without any markdown formatting, use plain text only with bare URLs when needed):"
+            }]
             
             # Build messages for API
             messages = []
@@ -412,7 +419,7 @@ class TelegramBot:
             messages.append({"role": "user", "content": message_content})
             
             # Get AI response with web search
-            response = await openrouter_client.get_completion(messages, search_model)
+            response = await openrouter_client.get_completion(messages, search_model, plugins=search_plugins)
             
             # Save to context
             await db.add_message_to_context(user_id, "user", message_content)
@@ -508,7 +515,14 @@ class TelegramBot:
             system_prompt = await db.get_system_prompt(user_id)
             
             # Use the special Gemini online model for search
-            search_model = "google/gemini-2.5-flash:online"
+            search_model = "google/gemini-2.5-flash"
+            
+            # Define search plugins with custom prompt to avoid markdown
+            search_plugins = [{
+                "id": "web",
+                "max_results": 3,
+                "search_prompt": "Here are relevant web search results (provide information without any markdown formatting, use plain text only with bare URLs when needed):"
+            }]
             
             # Build messages for API
             messages = []
@@ -519,7 +533,7 @@ class TelegramBot:
             messages.append({"role": "user", "content": message_content})
             
             # Get AI response with web search
-            response = await openrouter_client.get_completion(messages, search_model)
+            response = await openrouter_client.get_completion(messages, search_model, plugins=search_plugins)
             
             # Save to context
             await db.add_message_to_context(user_id, "user", message_content)
