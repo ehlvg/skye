@@ -1,9 +1,10 @@
 import logging
 import asyncio
+import uuid
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice
-from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, PreCheckoutQueryHandler, filters, ContextTypes
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, InlineQueryResultArticle, InputTextMessageContent
+from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, PreCheckoutQueryHandler, InlineQueryHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 
 from config import Config
@@ -38,6 +39,9 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("resetcontext", self.reset_context_command))
         self.application.add_handler(CommandHandler("ask", self.ask_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
+        
+        # Inline query handler
+        self.application.add_handler(InlineQueryHandler(self.handle_inline_query))
         
         # Message handlers
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
@@ -545,6 +549,191 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error processing media search request: {e}")
             await update.message.reply_text("❌ Произошла ошибка при выполнении поиска")
+
+    async def handle_inline_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle inline queries"""
+        query = update.inline_query.query
+        user_id = update.effective_user.id
+        
+        if not query.strip():
+            # Show help text when query is empty
+            results = [
+                InlineQueryResultArticle(
+                    id="help",
+                    title="🤖 Как использовать бота",
+                    description="Введите ваш вопрос после @botname",
+                    input_message_content=InputTextMessageContent(
+                        message_text="Для использования бота в inline-режиме введите ваш вопрос после упоминания бота.\n\nПример: @botname Что такое искусственный интеллект?"
+                    )
+                )
+            ]
+            await update.inline_query.answer(results, cache_time=300)
+            return
+        
+        # Check if user can send messages
+        if not await db.can_send_message(user_id):
+            results = [
+                InlineQueryResultArticle(
+                    id="limit_exceeded",
+                    title="❌ Лимит сообщений исчерпан",
+                    description="Обновитесь до Plus тарифа или дождитесь сброса лимитов",
+                    input_message_content=InputTextMessageContent(
+                        message_text="❌ Вы достигли лимита сообщений. Используйте /upgrade для обновления до Plus тарифа или дождитесь их сброса."
+                    )
+                )
+            ]
+            await update.inline_query.answer(results, cache_time=0)
+            return
+        
+        # Check if query starts with "search " for web search
+        is_search_query = query.lower().startswith("search ")
+        if is_search_query:
+            # Check if user has Plus tier for search
+            user_data = await db.get_user_data(user_id)
+            if not user_data or user_data['tier'] != 'plus':
+                results = [
+                    InlineQueryResultArticle(
+                        id="search_plus_only",
+                        title="🔒 Поиск доступен только для Plus",
+                        description="Обновитесь до Plus тарифа для использования поиска",
+                        input_message_content=InputTextMessageContent(
+                            message_text="🔒 Поиск в интернете доступен только для Plus пользователей.\nИспользуйте /upgrade для обновления до Plus тарифа."
+                        )
+                    )
+                ]
+                await update.inline_query.answer(results, cache_time=300)
+                return
+            
+            # Remove "search " prefix for processing
+            query = query[7:].strip()
+            if not query:
+                results = [
+                    InlineQueryResultArticle(
+                        id="search_empty",
+                        title="🔍 Введите поисковый запрос",
+                        description="Пример: search Последние новости ИИ",
+                        input_message_content=InputTextMessageContent(
+                            message_text="❌ Укажите поисковый запрос после 'search '.\nПример: @botname search Последние новости ИИ"
+                        )
+                    )
+                ]
+                await update.inline_query.answer(results, cache_time=300)
+                return
+        
+        try:
+            # Get AI response
+            if is_search_query:
+                response = await self._get_search_response(user_id, query)
+                response_prefix = "🔍 Результат поиска:\n\n"
+                title_prefix = "🔍 "
+            else:
+                response = await self._get_ai_response(user_id, query)
+                response_prefix = "🤖 "
+                title_prefix = "🤖 "
+            
+            # Truncate response for preview if too long
+            preview_text = response[:100] + "..." if len(response) > 100 else response
+            full_response = f"{response_prefix}{response}"
+            
+            results = [
+                InlineQueryResultArticle(
+                    id=f"response_{str(uuid.uuid4())}",
+                    title=f"{title_prefix}{query[:50]}{'...' if len(query) > 50 else ''}",
+                    description=preview_text,
+                    input_message_content=InputTextMessageContent(
+                        message_text=full_response
+                    )
+                )
+            ]
+            
+            await update.inline_query.answer(results, cache_time=0)
+            
+        except Exception as e:
+            logger.error(f"Error processing inline query: {e}")
+            results = [
+                InlineQueryResultArticle(
+                    id="error",
+                    title="❌ Произошла ошибка",
+                    description="Попробуйте еще раз или используйте команды в личных сообщениях",
+                    input_message_content=InputTextMessageContent(
+                        message_text="❌ Произошла ошибка при обработке запроса. Попробуйте еще раз."
+                    )
+                )
+            ]
+            await update.inline_query.answer(results, cache_time=0)
+
+    async def _get_ai_response(self, user_id: int, query: str) -> str:
+        """Get AI response for inline query"""
+        try:
+            # Prepare message content
+            message_content = [{"type": "text", "text": query}]
+            
+            # Get context and system prompt
+            context = await db.get_context(user_id)
+            system_prompt = await db.get_system_prompt(user_id)
+            model = await db.get_user_model(user_id)
+            
+            # Build messages for API
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            
+            messages.extend(context)
+            messages.append({"role": "user", "content": message_content})
+            
+            # Get AI response
+            response = await openrouter_client.get_completion(messages, model)
+            
+            # Save to context
+            await db.add_message_to_context(user_id, "user", message_content)
+            await db.add_message_to_context(user_id, "assistant", [{"type": "text", "text": response}])
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error getting AI response for inline: {e}")
+            raise
+
+    async def _get_search_response(self, user_id: int, query: str) -> str:
+        """Get search response for inline query"""
+        try:
+            # Prepare message content for search
+            message_content = [{"type": "text", "text": query}]
+            
+            # Get context and system prompt
+            context = await db.get_context(user_id)
+            system_prompt = await db.get_system_prompt(user_id)
+            
+            # Use the special Gemini online model for search
+            search_model = "google/gemini-2.5-flash"
+            
+            # Define search plugins with custom prompt to avoid markdown
+            search_plugins = [{
+                "id": "web",
+                "max_results": 3,
+                "search_prompt": "Here are relevant web search results (provide information without any markdown formatting, use plain text only with bare URLs when needed):"
+            }]
+            
+            # Build messages for API
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            
+            messages.extend(context)
+            messages.append({"role": "user", "content": message_content})
+            
+            # Get AI response with web search
+            response = await openrouter_client.get_completion(messages, search_model, plugins=search_plugins)
+            
+            # Save to context
+            await db.add_message_to_context(user_id, "user", message_content)
+            await db.add_message_to_context(user_id, "assistant", [{"type": "text", "text": response}])
+            
+            return response
+            
+        except Exception as e:
+            logger.error(f"Error getting search response for inline: {e}")
+            raise
 
     async def handle_callback(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle callback queries"""

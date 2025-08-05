@@ -87,7 +87,13 @@ class MessageFormatter:
 🗑️ /resetcontext - Очистить контекст чата
 🤖 /model - Выбрать модель ИИ
 👤 /profile - Посмотреть профиль и лимиты
-⭐️ /upgrade - Обновиться до Plus тарифа"""
+⭐️ /upgrade - Обновиться до Plus тарифа
+
+💡 **Inline-режим:** Используйте бота в любом чате!
+• @botname ваш_вопрос - Обычный запрос к ИИ
+• @botname search ваш_запрос - Поиск в интернете (только Plus)
+
+Просто начните печатать @botname в любом чате и задайте свой вопрос!"""
     
     @staticmethod
     def format_profile_message(profile: Dict[str, Any]) -> str:
