@@ -39,6 +39,7 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("resetcontext", self.reset_context_command))
         self.application.add_handler(CommandHandler("ask", self.ask_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
+        self.application.add_handler(CommandHandler("summarize", self.summarize_command))
         
         # Inline query handler
         self.application.add_handler(InlineQueryHandler(self.handle_inline_query))
@@ -46,6 +47,7 @@ class TelegramBot:
         # Message handlers
         self.application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message))
         self.application.add_handler(MessageHandler(filters.Document.ALL | filters.PHOTO, self.handle_media))
+        self.application.add_handler(MessageHandler(filters.VOICE | filters.AUDIO, self.handle_audio))
         
         # Callback handlers
         self.application.add_handler(CallbackQueryHandler(self.handle_callback))
@@ -192,6 +194,23 @@ class TelegramBot:
         query = " ".join(context.args)
         await self._process_search_request(update, user_id, query)
 
+    async def summarize_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /summarize command for YouTube videos"""
+        user_id = update.effective_user.id
+
+        if not await db.can_send_message(user_id):
+            await update.message.reply_text(
+                "❌ Вы достигли лимита сообщений. Обновитесь до Plus тарифа для увеличения лимитов или дождитесь их сброса."
+            )
+            return
+
+        if not context.args:
+            await update.message.reply_text("❌ Укажите ссылку на YouTube после команды /summarize")
+            return
+
+        url = context.args[0]
+        await self._process_youtube_summarization(update, user_id, url)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle text messages"""
         # Check if message contains model selection
@@ -249,6 +268,37 @@ class TelegramBot:
             # Handle ask command with media
             query = caption.replace("/ask", "").strip()
             await self._process_media_request(update, user_id, query)
+
+    async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle voice or audio messages"""
+        user_id = update.effective_user.id
+
+        if not await db.can_send_message(user_id):
+            await update.message.reply_text(
+                "❌ Вы достигли лимита сообщений. Обновитесь до Plus тарифа для увеличения лимитов или дождитесь их сброса."
+            )
+            return
+
+        file = None
+        if update.message.voice:
+            file = await update.message.voice.get_file()
+        elif update.message.audio:
+            file = await update.message.audio.get_file()
+
+        if not file:
+            return
+
+        file_data = await self.file_processor.download_file(file.file_path)
+        if not file_data:
+            await update.message.reply_text("❌ Ошибка скачивания аудио")
+            return
+
+        processed_data = await asyncio.to_thread(self.file_processor.process_audio, file_data)
+        if not processed_data:
+            await update.message.reply_text("❌ Ошибка обработки аудио")
+            return
+
+        await self._process_audio_request(update, user_id, processed_data, "mp3")
     
     async def _process_ai_request(self, update: Update, user_id: int, query: str) -> None:
         """Process AI request"""
@@ -390,6 +440,47 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error processing media request: {e}")
             await update.message.reply_text("❌ Произошла ошибка при обработке запроса")
+
+    async def _process_audio_request(
+        self,
+        update: Update,
+        user_id: int,
+        audio_data: str,
+        audio_format: str,
+        prompt_text: Optional[str] = None,
+        prefix: str = "🤖",
+    ) -> None:
+        """Process audio request"""
+        try:
+            await update.message.reply_chat_action("typing")
+
+            message_content: List[Dict[str, Any]] = []
+            if prompt_text:
+                message_content.append({"type": "text", "text": prompt_text})
+            message_content.append({
+                "type": "input_audio",
+                "input_audio": {"data": audio_data, "format": audio_format},
+            })
+
+            context_data = await db.get_context(user_id)
+            system_prompt = await db.get_system_prompt(user_id)
+            model = await db.get_user_model(user_id)
+
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.extend(context_data)
+            messages.append({"role": "user", "content": message_content})
+
+            response = await openrouter_client.get_completion(messages, model)
+
+            await db.add_message_to_context(user_id, "user", message_content)
+            await db.add_message_to_context(user_id, "assistant", [{"type": "text", "text": response}])
+
+            await update.message.reply_text(f"{prefix} {response}")
+        except Exception as e:
+            logger.error(f"Error processing audio request: {e}")
+            await update.message.reply_text("❌ Произошла ошибка при обработке аудио")
     
     async def _process_search_request(self, update: Update, user_id: int, query: str) -> None:
         """Process search request using Gemini online model"""
@@ -549,6 +640,27 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error processing media search request: {e}")
             await update.message.reply_text("❌ Произошла ошибка при выполнении поиска")
+
+    async def _process_youtube_summarization(self, update: Update, user_id: int, url: str) -> None:
+        """Download YouTube audio and summarize"""
+        try:
+            await update.message.reply_chat_action("typing")
+            audio_data = await self.file_processor.download_youtube_audio(url)
+            if not audio_data:
+                await update.message.reply_text("❌ Не удалось скачать аудио с YouTube")
+                return
+
+            await self._process_audio_request(
+                update,
+                user_id,
+                audio_data,
+                "mp3",
+                prompt_text="Summarize the main points of this audio.",
+                prefix="📝",
+            )
+        except Exception as e:
+            logger.error(f"Error summarizing YouTube video: {e}")
+            await update.message.reply_text("❌ Произошла ошибка при суммаризации видео")
 
     async def handle_inline_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle inline queries"""

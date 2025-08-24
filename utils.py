@@ -1,6 +1,10 @@
 import io
 import base64
 import logging
+import tempfile
+import subprocess
+import os
+import asyncio
 from typing import Optional, List, Dict, Any
 from PIL import Image
 import PyPDF2
@@ -71,6 +75,68 @@ class FileProcessor:
         except Exception as e:
             logger.error(f"Error processing PDF: {e}")
             return None
+
+    @staticmethod
+    def process_audio(audio_data: bytes) -> Optional[str]:
+        """Convert audio to MP3 and return base64 string"""
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".ogg", delete=False) as src:
+                src.write(audio_data)
+                src_path = src.name
+            with tempfile.NamedTemporaryFile(suffix=".mp3", delete=False) as dst:
+                dst_path = dst.name
+            subprocess.run([
+                "ffmpeg",
+                "-y",
+                "-i",
+                src_path,
+                dst_path,
+            ], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
+            with open(dst_path, "rb") as f:
+                mp3_data = f.read()
+            base64_data = base64.b64encode(mp3_data).decode("utf-8")
+            return base64_data
+        except Exception as e:
+            logger.error(f"Error processing audio: {e}")
+            return None
+        finally:
+            for path in [locals().get('src_path'), locals().get('dst_path')]:
+                if path and os.path.exists(path):
+                    try:
+                        os.remove(path)
+                    except Exception:
+                        pass
+
+    @staticmethod
+    async def download_youtube_audio(url: str) -> Optional[str]:
+        """Download YouTube audio and return base64 MP3 string"""
+        def _download() -> Optional[str]:
+            try:
+                from yt_dlp import YoutubeDL
+                with tempfile.TemporaryDirectory() as tmpdir:
+                    output = os.path.join(tmpdir, "audio.%(ext)s")
+                    ydl_opts = {
+                        "format": "bestaudio/best",
+                        "outtmpl": output,
+                        "quiet": True,
+                        "noprogress": True,
+                        "postprocessors": [{
+                            "key": "FFmpegExtractAudio",
+                            "preferredcodec": "mp3",
+                            "preferredquality": "192",
+                        }],
+                    }
+                    with YoutubeDL(ydl_opts) as ydl:
+                        ydl.download([url])
+                    audio_path = os.path.join(tmpdir, "audio.mp3")
+                    with open(audio_path, "rb") as f:
+                        data = f.read()
+                    return base64.b64encode(data).decode("utf-8")
+            except Exception as e:
+                logger.error(f"Error downloading YouTube audio: {e}")
+                return None
+
+        return await asyncio.to_thread(_download)
 
 class MessageFormatter:
     @staticmethod
