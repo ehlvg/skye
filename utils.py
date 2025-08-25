@@ -107,37 +107,6 @@ class FileProcessor:
                     except Exception:
                         pass
 
-    @staticmethod
-    async def download_youtube_audio(url: str) -> Optional[str]:
-        """Download YouTube audio and return base64 MP3 string"""
-        def _download() -> Optional[str]:
-            try:
-                from yt_dlp import YoutubeDL
-                with tempfile.TemporaryDirectory() as tmpdir:
-                    output = os.path.join(tmpdir, "audio.%(ext)s")
-                    ydl_opts = {
-                        "format": "bestaudio/best",
-                        "outtmpl": output,
-                        "quiet": True,
-                        "noprogress": True,
-                        "postprocessors": [{
-                            "key": "FFmpegExtractAudio",
-                            "preferredcodec": "mp3",
-                            "preferredquality": "192",
-                        }],
-                    }
-                    with YoutubeDL(ydl_opts) as ydl:
-                        ydl.download([url])
-                    audio_path = os.path.join(tmpdir, "audio.mp3")
-                    with open(audio_path, "rb") as f:
-                        data = f.read()
-                    return base64.b64encode(data).decode("utf-8")
-            except Exception as e:
-                logger.error(f"Error downloading YouTube audio: {e}")
-                return None
-
-        return await asyncio.to_thread(_download)
-
 class MessageFormatter:
     @staticmethod
     def format_welcome_message() -> str:

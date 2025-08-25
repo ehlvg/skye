@@ -39,7 +39,6 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("resetcontext", self.reset_context_command))
         self.application.add_handler(CommandHandler("ask", self.ask_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
-        self.application.add_handler(CommandHandler("summarize", self.summarize_command))
         
         # Inline query handler
         self.application.add_handler(InlineQueryHandler(self.handle_inline_query))
@@ -193,23 +192,6 @@ class TelegramBot:
         
         query = " ".join(context.args)
         await self._process_search_request(update, user_id, query)
-
-    async def summarize_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /summarize command for YouTube videos"""
-        user_id = update.effective_user.id
-
-        if not await db.can_send_message(user_id):
-            await update.message.reply_text(
-                "❌ Вы достигли лимита сообщений. Обновитесь до Plus тарифа для увеличения лимитов или дождитесь их сброса."
-            )
-            return
-
-        if not context.args:
-            await update.message.reply_text("❌ Укажите ссылку на YouTube после команды /summarize")
-            return
-
-        url = context.args[0]
-        await self._process_youtube_summarization(update, user_id, url)
 
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle text messages"""
@@ -464,7 +446,8 @@ class TelegramBot:
 
             context_data = await db.get_context(user_id)
             system_prompt = await db.get_system_prompt(user_id)
-            model = await db.get_user_model(user_id)
+            # Always use Gemini 2.5 Flash for audio inputs as it's the only model that supports audio
+            model = "google/gemini-2.5-flash"
 
             messages = []
             if system_prompt:
@@ -640,27 +623,6 @@ class TelegramBot:
         except Exception as e:
             logger.error(f"Error processing media search request: {e}")
             await update.message.reply_text("❌ Произошла ошибка при выполнении поиска")
-
-    async def _process_youtube_summarization(self, update: Update, user_id: int, url: str) -> None:
-        """Download YouTube audio and summarize"""
-        try:
-            await update.message.reply_chat_action("typing")
-            audio_data = await self.file_processor.download_youtube_audio(url)
-            if not audio_data:
-                await update.message.reply_text("❌ Не удалось скачать аудио с YouTube")
-                return
-
-            await self._process_audio_request(
-                update,
-                user_id,
-                audio_data,
-                "mp3",
-                prompt_text="Summarize the main points of this audio.",
-                prefix="📝",
-            )
-        except Exception as e:
-            logger.error(f"Error summarizing YouTube video: {e}")
-            await update.message.reply_text("❌ Произошла ошибка при суммаризации видео")
 
     async def handle_inline_query(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle inline queries"""
