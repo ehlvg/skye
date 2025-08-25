@@ -9,9 +9,8 @@ Telegram бот на Python с интеграцией OpenRouter API, подде
 - 🎯 Кастомные системные промпты
 - 📄 Обработка PDF документов и изображений
 - 🎙️ Распознавание голосовых сообщений
-- 📝 Суммаризация YouTube видео по аудио
-- � Поиск в интернете (Plus тариф)
-- �💳 Платежи через Telegram Stars
+- 🌐 Поиск в интернете (Plus тариф)
+- 💳 Платежи через Telegram Stars
 - 📊 Система лимитов и тарифов (Lite/Plus)
 - 🗄️ Безопасная база данных Supabase
 - 🐳 Docker поддержка
@@ -37,12 +36,14 @@ Telegram бот на Python с интеграцией OpenRouter API, подде
 ### Обычная установка
 
 1. Клонируйте репозиторий:
+
 ```bash
 git clone <repository-url>
 cd telegram-openrouter-bot
 ```
 
 2. Создайте виртуальное окружение:
+
 ```bash
 python -m venv venv
 source venv/bin/activate  # Linux/Mac
@@ -51,16 +52,19 @@ venv\Scripts\activate  # Windows
 ```
 
 3. Установите зависимости:
+
 ```bash
 pip install -r requirements.txt
 ```
 
 4. Скопируйте `.env.example` в `.env` и заполните переменные:
+
 ```bash
 cp .env.example .env
 ```
 
 5. Настройте переменные окружения в `.env`:
+
 ```
 TELEGRAM_BOT_TOKEN=your_bot_token_here
 OPENROUTER_API_KEY=your_openrouter_api_key_here
@@ -71,6 +75,7 @@ CONTEXT_SIZE=10
 ```
 
 6. Запустите бота:
+
 ```bash
 python bot.py
 ```
@@ -80,11 +85,13 @@ python bot.py
 1. Создайте `.env` файл как описано выше
 
 2. Запустите через Docker Compose:
+
 ```bash
 docker-compose up -d
 ```
 
 3. Проверьте логи:
+
 ```bash
 docker-compose logs -f telegram-bot
 ```
@@ -135,11 +142,13 @@ docker-compose logs -f telegram-bot
 ## Тарифы
 
 ### Lite (бесплатный)
+
 - 10 сообщений в день
 - 50 сообщений в месяц
 - Доступ к базовым моделям
 
 ### Plus (300 Telegram Stars)
+
 - 50 сообщений в день
 - 500 сообщений в месяц
 - Доступ к премиум моделям
@@ -155,6 +164,7 @@ docker-compose logs -f telegram-bot
 ## Мониторинг
 
 Логи доступны через Docker:
+
 ```bash
 docker-compose logs -f telegram-bot
 ```
@@ -176,4 +186,4 @@ docker-compose up -d --build
 
 ## Поддержка
 
-Если у вас есть вопросы или проблемы, создайте issue в репозитории. 
+Если у вас есть вопросы или проблемы, создайте issue в репозитории.
