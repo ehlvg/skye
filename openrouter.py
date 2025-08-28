@@ -1,7 +1,7 @@
 import aiohttp
 import asyncio
 import logging
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional, Union
 from config import Config
 
 logger = logging.getLogger(__name__)
@@ -15,11 +15,15 @@ class OpenRouterClient:
             "Content-Type": "application/json"
         }
     
-    async def get_completion(self, messages: List[Dict[str, Any]], model: str, plugins: List[Dict[str, Any]] = None) -> str:
-        """Get completion from OpenRouter API"""
+    async def get_completion(self, messages: List[Dict[str, Any]], model: str, plugins: Optional[List[Dict[str, Any]]] = None, modalities: Optional[List[str]] = None) -> Union[str, Dict[str, Any]]:
+        """Get completion from OpenRouter API.
+        Returns:
+            - For text responses: a string containing the response text
+            - For image generation: a dict containing the full message with images
+        """
         try:
             async with aiohttp.ClientSession() as session:
-                payload = {
+                payload: Dict[str, Any] = {
                     "model": model,
                     "messages": messages
                 }
@@ -28,6 +32,10 @@ class OpenRouterClient:
                 if plugins:
                     payload["plugins"] = plugins
                 
+                # Add modalities if provided (for image generation)
+                if modalities:
+                    payload["modalities"] = modalities
+                
                 async with session.post(
                     f"{self.base_url}/chat/completions",
                     json=payload,
@@ -35,7 +43,13 @@ class OpenRouterClient:
                 ) as response:
                     if response.status == 200:
                         data = await response.json()
-                        return data["choices"][0]["message"]["content"]
+                        message = data["choices"][0]["message"]
+                        
+                        # If this is an image generation response (has images field), return full message
+                        if "images" in message:
+                            return message
+                        # Otherwise return just the content text
+                        return message.get("content", "Sorry, I couldn't understand the AI's response.")
                     else:
                         error_text = await response.text()
                         logger.error(f"OpenRouter API error: {response.status} - {error_text}")

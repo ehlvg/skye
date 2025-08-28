@@ -1,9 +1,11 @@
 import logging
 import asyncio
 import uuid
+import base64
+import io
 from datetime import datetime, timedelta
 from typing import List, Dict, Any, Optional
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, InlineQueryResultArticle, InputTextMessageContent
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, LabeledPrice, InlineQueryResultArticle, InputTextMessageContent, InputMediaPhoto
 from telegram.ext import Application, CommandHandler, MessageHandler, CallbackQueryHandler, PreCheckoutQueryHandler, InlineQueryHandler, filters, ContextTypes
 from telegram.constants import ParseMode
 
@@ -25,6 +27,37 @@ class TelegramBot:
         self.file_processor = FileProcessor()
         self.message_formatter = MessageFormatter()
         self._setup_handlers()
+
+    def _should_process_message(self, update: Update) -> bool:
+        """Check if a message should be processed based on chat type, mention/reply status, and commands"""
+        if not update.message:
+            return False
+            
+        # Always process messages in private chats
+        if update.message.chat.type == 'private':
+            return True
+            
+        message = update.message
+        
+        # Check if message is a reply to bot's message
+        if message.reply_to_message and message.reply_to_message.from_user:
+            if message.reply_to_message.from_user.id == self.application.bot.id:
+                return True
+        
+        # Check for mention of the bot
+        if message.text:
+            bot_username = self.application.bot.username
+            if f"@{bot_username}" in message.text:
+                return True
+                
+        # Check for commands
+        text = message.text or message.caption or ""
+        commands = ["/ask", "/search", "/img", "/start", "/profile", "/upgrade", 
+                   "/setprompt", "/resetprompt", "/getprompt", "/resetcontext"]
+        if any(text.startswith(cmd) for cmd in commands):
+            return True
+                
+        return False
     
     def _setup_handlers(self):
         """Setup all bot handlers"""
@@ -32,13 +65,13 @@ class TelegramBot:
         self.application.add_handler(CommandHandler("start", self.start_command))
         self.application.add_handler(CommandHandler("profile", self.profile_command))
         self.application.add_handler(CommandHandler("upgrade", self.upgrade_command))
-        self.application.add_handler(CommandHandler("model", self.model_command))
         self.application.add_handler(CommandHandler("setprompt", self.set_prompt_command))
         self.application.add_handler(CommandHandler("resetprompt", self.reset_prompt_command))
         self.application.add_handler(CommandHandler("getprompt", self.get_prompt_command))
         self.application.add_handler(CommandHandler("resetcontext", self.reset_context_command))
         self.application.add_handler(CommandHandler("ask", self.ask_command))
         self.application.add_handler(CommandHandler("search", self.search_command))
+        self.application.add_handler(CommandHandler("img", self.img_command))
         
         # Inline query handler
         self.application.add_handler(InlineQueryHandler(self.handle_inline_query))
@@ -97,25 +130,7 @@ class TelegramBot:
             start_parameter="upgrade_to_plus"
         )
     
-    async def model_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-        """Handle /model command"""
-        user_id = update.effective_user.id
-        available_models = await db.get_available_models(user_id)
-        current_model = await db.get_user_model(user_id)
-        
-        keyboard = []
-        for model in available_models:
-            emoji = "✅" if model == current_model else "◻️"
-            keyboard.append([InlineKeyboardButton(
-                f"{emoji} {model}",
-                callback_data=f"model_{model}"
-            )])
-        
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await update.message.reply_text(
-            f"🤖 Выберите модель:\n\nТекущая модель: {current_model}",
-            reply_markup=reply_markup
-        )
+
     
     async def set_prompt_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle /setprompt command"""
@@ -193,66 +208,70 @@ class TelegramBot:
         query = " ".join(context.args)
         await self._process_search_request(update, user_id, query)
 
+    async def img_command(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+        """Handle /img command for image generation."""
+        user_id = update.effective_user.id
+
+        if not await db.can_send_message(user_id):
+            await update.message.reply_text("Вы достигли лимита сообщений. Попробуйте позже или обновитесь до Plus.")
+            return
+
+        if not context.args:
+            await update.message.reply_text("Пожалуйста, введите текстовый промпт для генерации изображения после команды /img.")
+            return
+
+        query = " ".join(context.args)
+        await self._process_image_generation_request(update, user_id, query)
+
     async def handle_message(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle text messages"""
-        # Check if message contains model selection
-        text = update.message.text
-        user_id = update.effective_user.id
-        
-        available_models = await db.get_available_models(user_id)
-        if text in available_models:
-            success = await db.set_user_model(user_id, text)
-            if success:
-                await update.message.reply_text(
-                    f"✅ Модель изменена на: {text}",
-                    reply_markup={"remove_keyboard": True}
-                )
-            else:
-                await update.message.reply_text("❌ Ошибка изменения модели")
+        # Check if we should process this message
+        if not self._should_process_message(update):
             return
-        
-        # For other messages, ignore unless it's a command
-        pass
+            
+        # Process the message if bot was mentioned or replied to
+        if update.message and update.message.text:
+            user_id = update.effective_user.id
+            text = update.message.text.replace(f"@{self.application.bot.username}", "").strip()
+            if text:  # Only process if there's actual text after removing the mention
+                await self._process_ai_request(update, user_id, text)
     
     async def handle_media(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle media messages with /ask or /search command"""
+        # Check if we should process this message
+        if not self._should_process_message(update):
+            return
+            
         user_id = update.effective_user.id
         
-        # Check if message has /ask or /search command in caption
         caption = update.message.caption or ""
-        if not (caption.startswith("/ask") or caption.startswith("/search")):
-            # In group chats, ignore files without command (don't respond)
-            if update.message.chat.type in ['group', 'supergroup']:
-                return
-            # In private chats, show instruction message
-            await update.message.reply_text("📎 Для обработки файлов используйте команду /ask или /search в подписи к файлу")
-            return
         
         if not await db.can_send_message(user_id):
-            await update.message.reply_text(
-                "❌ Вы достигли лимита сообщений. Обновитесь до Plus тарифа для увеличения лимитов или дождитесь их сброса."
-            )
+            await update.message.reply_text("Вы достигли лимита сообщений. Попробуйте позже или обновитесь до Plus.")
             return
         
         # Handle search command with media
         if caption.startswith("/search"):
-            # Check if user has Plus tier for search
             user_data = await db.get_user_data(user_id)
             if not user_data or user_data['tier'] != 'plus':
-                await update.message.reply_text(
-                    "🔒 Команда /search доступна только для Plus пользователей.\nИспользуйте /upgrade для обновления до Plus тарифа."
-                )
+                await update.message.reply_text("🔍 Поиск по файлам доступен только для подписчиков Plus.")
                 return
             
             query = caption.replace("/search", "").strip()
             await self._process_media_search_request(update, user_id, query)
+        elif caption.startswith("/img"):
+            query = caption.replace("/img", "").strip()
+            await self._process_image_generation_request(update, user_id, query)
         else:
-            # Handle ask command with media
             query = caption.replace("/ask", "").strip()
             await self._process_media_request(update, user_id, query)
 
     async def handle_audio(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
         """Handle voice or audio messages"""
+        # Check if we should process this message
+        if not self._should_process_message(update):
+            return
+            
         user_id = update.effective_user.id
 
         if not await db.can_send_message(user_id):
@@ -294,7 +313,7 @@ class TelegramBot:
             # Get context and system prompt
             context = await db.get_context(user_id)
             system_prompt = await db.get_system_prompt(user_id)
-            model = await db.get_user_model(user_id)
+            model = "google/gemini-2.5-flash"
             
             # Build messages for API
             messages = []
@@ -318,6 +337,64 @@ class TelegramBot:
             logger.error(f"Error processing AI request: {e}")
             await update.message.reply_text("❌ Произошла ошибка при обработке запроса")
     
+    async def _process_image_generation_request(self, update: Update, user_id: int, query: str) -> None:
+        """Process image generation request using Gemini 2.5 Flash Image Preview."""
+        try:
+            await update.message.reply_text("🎨 Генерирую изображение...", reply_to_message_id=update.message.message_id)
+            
+            content_parts = [{"type": "text", "text": query}]
+            
+            # Handle attached image
+            if update.message.photo:
+                photo_size = update.message.photo[-1] # Get the highest resolution
+                file = await photo_size.get_file()
+                file_data = await self.file_processor.download_file(file.file_path)
+                if file_data:
+                    base64_image_url = self.file_processor.process_image(file_data, 'image/jpeg') 
+                    if base64_image_url:
+                        content_parts.append({"type": "image_url", "image_url": {"url": base64_image_url}})
+
+            messages = [{"role": "user", "content": content_parts}]
+            
+            # Call OpenRouter API
+            model = "google/gemini-2.5-flash-image-preview"
+            response = await openrouter_client.get_completion(
+                messages=messages,
+                model=model,
+                modalities=["image", "text"]
+            )
+
+            await db.add_message_to_context(user_id, "user", query)
+            
+            # For image generation, response will be a dict if images were generated, or string if not
+            if isinstance(response, dict) and "images" in response:
+                generated_images = []
+                for image_info in response["images"]:
+                    image_url = image_info["image_url"]["url"]
+                    header, encoded = image_url.split(",", 1)
+                    image_data = base64.b64decode(encoded)
+                    generated_images.append(InputMediaPhoto(media=image_data))
+
+                # Send all generated images
+                if len(generated_images) > 1:
+                    await update.message.reply_media_group(media=generated_images)
+                else:
+                    await update.message.reply_photo(photo=generated_images[0].media)
+
+                # If there's an explanation text, send it after the images
+                if response.get("content"):
+                    await update.message.reply_text(response["content"])
+                    await db.add_message_to_context(user_id, "assistant", response["content"])
+            else:
+                # If we got a string response or no images, just send the text
+                text_response = response if isinstance(response, str) else "Не удалось сгенерировать изображение. Попробуйте еще раз."
+                await update.message.reply_text(text_response)
+                await db.add_message_to_context(user_id, "assistant", text_response)
+
+        except Exception as e:
+            logger.error(f"Error processing image generation request: {e}")
+            await update.message.reply_text("Произошла ошибка при генерации изображения.")
+
     async def _process_media_request(self, update: Update, user_id: int, query: str) -> None:
         """Process media request"""
         try:
@@ -399,7 +476,7 @@ class TelegramBot:
             # Get context and system prompt
             context = await db.get_context(user_id)
             system_prompt = await db.get_system_prompt(user_id)
-            model = await db.get_user_model(user_id)
+            model = "google/gemini-2.5-flash"
             
             # Build messages for API
             messages = []
@@ -745,7 +822,7 @@ class TelegramBot:
             # Get context and system prompt
             context = await db.get_context(user_id)
             system_prompt = await db.get_system_prompt(user_id)
-            model = await db.get_user_model(user_id)
+            model = "google/gemini-2.5-flash"
             
             # Build messages for API
             messages = []
